@@ -1,15 +1,18 @@
-name: Run analysis
+name: Analysis
 
 on:
   push:
-    branches: [main, v2-portfolio-strategy]
+    branches: [main]
+  pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "17 9 3 * *"   # monthly, after EPU and GPR updates
 
 permissions:
   contents: write
 
 jobs:
-  analysis:
+  tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,22 +20,23 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
-      - name: Tests
-        run: pytest -q
-      - name: Analysis on real data
+      - run: pytest -q
+
+  refresh-results:
+    # Re-run on the latest data and commit updated charts, tables and briefing.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python run_analysis.py --refresh
+      - name: Commit updated results
         run: |
-          set -o pipefail
-          mkdir -p output
-          python run_analysis.py --out output 2>&1 | tee output/run.log
-      - name: Publish results to the results branch
-        if: always()
-        run: |
-          mkdir -p /tmp/res && cp -r output data /tmp/res/ 2>/dev/null || true
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout --orphan results
-          git rm -rq --cached . && git clean -fdxq -e .git
-          cp -r /tmp/res/* . 2>/dev/null || true
-          git add -f output data 2>/dev/null || true
-          git commit -qm "Results from run ${GITHUB_RUN_ID} (${GITHUB_SHA::7})" || exit 0
-          git push -f origin results
+          git add results
+          git diff --cached --quiet || (git commit -m "Refresh results with latest data" && git push)

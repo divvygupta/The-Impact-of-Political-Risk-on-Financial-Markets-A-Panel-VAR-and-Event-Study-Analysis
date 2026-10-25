@@ -149,12 +149,19 @@ def _fmt_pct(x, d=1):
 def briefing(res: dict, out: str, synthetic: bool) -> str:
     lp, reg, m, summ, per_event, stress, w = (res[k] for k in ["lp", "regimes", "metrics", "event_summary",
                                                                "per_event", "stress", "weights"])
+    r0 = lp[(lp.outcome == "xret") & (lp.h == 0)].iloc[0]
     r3 = lp[(lp.outcome == "xret") & (lp.h == 3)].iloc[0]
+    v0 = lp[(lp.outcome == "log_rvol") & (lp.h == 0)].iloc[0]
     v1 = lp[(lp.outcome == "log_rvol") & (lp.h == 1)].iloc[0]
+    var = res["var"]
+    var_v = var["irf"][:, 2, 0]
+    var_sig = int((var["lo"][1:, 2, 0] > 0).sum())
     allev = summ.loc["All events"]
+    kinds = summ.drop(index="All events")
     tilt, eq = m.loc["Political-risk tilt"], m.loc["Equal weight"]
-    worst = per_event.nsmallest(3, "CAR [0,+5]")
-    sig = lambda p: "statistically significant" if p < 0.05 else "not statistically significant"  # noqa: E731
+    worst = per_event.nsmallest(3, "CAR [-1,+1]")
+    sig = lambda p: "statistically significant at 5%" if p < 0.05 else "not statistically significant"  # noqa: E731
+    pct = lambda b: (np.exp(b) - 1) * 100  # noqa: E731
 
     lines = [
         "# Investment Briefing: Political Risk and the Global Equity Mix", "",
@@ -163,45 +170,52 @@ def briefing(res: dict, out: str, synthetic: bool) -> str:
         lines += ["> **Synthetic data.** These numbers come from simulated data with a known effect built in, "
                   "to check that the pipeline works. They are not findings. Run `python run_analysis.py` "
                   "with internet access for real results.", ""]
+    kind_lines = [f"   - {k.replace('_', ' ').capitalize()} (n = {int(r.n_events)}): {_fmt_pct(r['mean CAR [-1,+1]'], 1)} "
+                  f"(BMP p = {r['BMP p [-1,+1]']:.2f})" for k, r in kinds.sort_values("mean CAR [-1,+1]").iterrows()]
+    sig_kinds = [k.replace("_", " ") for k, r in kinds.iterrows() if r["BMP p [-1,+1]"] < 0.05 and r["n_events"] >= 5]
     lines += [
-        f"Coverage: {res['n_countries']} equity markets, {res['start']} to {res['end']}, monthly. "
-        f"Political Risk Index (PRI) combines Economic Policy Uncertainty and Geopolitical Risk "
-        f"(PCA weights: EPU {res['pca'].iloc[0]:.2f}, GPR {res['pca'].iloc[1]:.2f}).", "",
+        f"Coverage: {res['n_countries']} equity markets, {res['start']} to {res['end']}, monthly, "
+        f"{int(lp.nobs.max()):,} country-month observations. The Political Risk Index (PRI) averages standardised "
+        f"Economic Policy Uncertainty and Geopolitical Risk (first-principal-component weights "
+        f"{res['pca'].iloc[0]:.2f} / {res['pca'].iloc[1]:.2f}).", "",
         "## Key findings", "",
-        f"1. **Return impact.** A one-standard-deviation surprise in a country's political risk is followed by a "
-        f"cumulative {r3.beta * 100:+.2f} pp excess return versus ACWI over four months (t+0 to t+3; "
-        f"p = {r3.pval:.2f}, {sig(r3.pval)}). Month fixed effects remove global moves, "
-        f"so this is the country-specific effect.",
-        f"2. **Volatility impact.** The same shock moves next-month realised volatility by "
-        f"{(np.exp(v1.beta) - 1) * 100:+.1f}% (p = {v1.pval:.2f}).",
-        f"3. **Regimes.** Countries in the top third of political risk returned "
-        f"{_fmt_pct(reg.attrs['high_minus_low_ann'])} a year relative to the bottom third the following month "
-        f"(p = {reg.attrs['p']:.2f}), with average realised volatility of "
-        f"{_fmt_pct(reg.loc['High risk', 'avg realised vol'])} vs {_fmt_pct(reg.loc['Low risk', 'avg realised vol'])}.",
-        f"4. **Event risk.** Across {int(allev['n_events'])} political events, the mean abnormal return over "
-        f"[0,+5] days was {_fmt_pct(allev['mean CAR [0,+5]'], 2)} (BMP p = {allev['BMP p [0,+5]']:.2f}). "
-        f"Largest moves: " + "; ".join(f"{r.country} {r.event} {_fmt_pct(r['CAR [0,+5]'])}" for _, r in worst.iterrows()) + ".",
-        f"5. **Portfolio tilt.** Underweighting the three markets with the sharpest rise in real-time political risk "
-        f"gave a return/volatility ratio of {tilt['return/vol']:.2f} vs {eq['return/vol']:.2f} for equal weight, "
-        f"a max drawdown of {_fmt_pct(tilt['max drawdown'])} vs {_fmt_pct(eq['max drawdown'])}, tracking error of "
-        f"{_fmt_pct(tilt['tracking error'])} and an information ratio of {tilt['information ratio']:.2f}.",
+        f"1. **Political risk shows up in volatility, not in returns.** A one-standard-deviation political-risk "
+        f"surprise raises a country's realised volatility by {pct(v0.beta):+.1f}% in the same month "
+        f"(p = {v0.pval:.3f}) and {pct(v1.beta):+.1f}% the next (p = {v1.pval:.2f}), relative to other markets "
+        f"that month. In the panel VAR, which also captures moves shared across markets, volatility rises "
+        f"{pct(var_v[0]):+.1f}% on impact and is significantly above normal in {var_sig} of the following 12 months.",
+        f"2. **No lasting return penalty.** The same shock comes with a {r0.beta * 100:+.2f} pp excess return versus "
+        f"ACWI in the month (p = {r0.pval:.2f}) and a cumulative {r3.beta * 100:+.2f} pp after four months "
+        f"(p = {r3.pval:.2f}, {sig(r3.pval)}). Markets reprice risk quickly; they do not keep falling.",
+        f"3. **No regime effect.** Markets in the top third of political risk returned "
+        f"{_fmt_pct(reg.attrs['high_minus_low_ann'])} a year versus the bottom third the following month "
+        f"(p = {reg.attrs['p']:.2f}).",
+        f"4. **Event type matters.** Across {int(allev['n_events'])} events the mean 3-day abnormal return was "
+        f"{_fmt_pct(allev['mean CAR [-1,+1]'], 1)} (BMP p = {allev['BMP p [-1,+1]']:.2f}), but this hides a split:",
+        *kind_lines,
+        "   Largest 3-day moves: " + "; ".join(f"{r.country} {r.event} {_fmt_pct(r['CAR [-1,+1]'])}"
+                                              for _, r in worst.iterrows()) + ".",
+        f"5. **A simple tilt adds little.** Halving the weight of the three markets with the sharpest rise in "
+        f"real-time political risk gave a return/volatility ratio of {tilt['return/vol']:.2f} vs {eq['return/vol']:.2f} "
+        f"for equal weight, max drawdown of {_fmt_pct(tilt['max drawdown'])} vs {_fmt_pct(eq['max drawdown'])}, and an "
+        f"information ratio of {tilt['information ratio']:.2f} at {_fmt_pct(tilt['tracking error'])} tracking error, "
+        f"before transaction costs ({_fmt_pct(tilt['avg monthly turnover'])} average monthly turnover).",
         "",
         "## Implications for the total fund", "",
-        "- Political risk is better treated as a **risk-budget input** (position sizing and hedging around known "
-        "events) than as a standalone return signal; the evidence for lasting return effects should be judged on "
-        "the significance figures above, not the point estimates.",
-        "- By event type, the largest average [0,+5] reaction was for **"
-        + (kinds := summ.drop(index="All events")["mean CAR [0,+5]"]).idxmin().replace("_", " ")
-        + f"** events ({_fmt_pct(kinds.min(), 2)}) and the smallest for **"
-        + kinds.idxmax().replace("_", " ") + f"** ({_fmt_pct(kinds.max(), 2)}). Scheduled elections give "
-        "time to hedge ahead of the vote; unscheduled shocks do not.",
+        "- Treat political risk as a **risk-budget input**, not a return signal: it predicts higher volatility "
+        "in the same month and, more weakly, the next, which matters for position sizing, risk limits and option hedging, while "
+        "it does not predict lower returns.",
+        ("- **Unscheduled " + " and ".join(sig_kinds) + "** events carry statistically significant short-run losses; "
+         "scheduled elections do not, because markets can price and hedge them in advance. Monitoring for "
+         "leadership and cabinet instability is more valuable than election calendars." if sig_kinds else
+         "- No single event type shows a statistically significant short-run loss with at least five events."),
         "- Stress-test returns are in USD and so include currency moves. For a Canadian-dollar fund, the "
         "FX hedging decision is part of the political-risk exposure, not separate from it.",
         "",
         "## Current read (latest month)", "",
     ]
     latest = res["pri_latest"].sort_values(ascending=False)
-    lines += ["| Country | PRI (real time) | Model weight |", "|---|---|---|"]
+    lines += ["| Country | PRI (real time) | Tilt-model weight |", "|---|---|---|"]
     for c, v in latest.items():
         lines.append(f"| {c} | {v:+.2f} | {_fmt_pct(w.iloc[-1].get(c, np.nan))} |")
     lines += ["", "## Stress tests (cumulative USD return)", "", (stress * 100).round(1).to_markdown(), "",
@@ -211,7 +225,7 @@ def briefing(res: dict, out: str, synthetic: bool) -> str:
               "cross-country and serial correlation.",
               "- Panel VAR is identified with political risk ordered first; results may depend on this ordering.",
               "- Ten markets and roughly two decades of data limit statistical power. Treat estimates as indicative.",
-              "- Event dates are compiled by the author and should be checked before use.", ""]
+              "- Event dates are the first U.S. trading day on which the news could be priced, taken from public reporting.", ""]
     path = os.path.join(out, "briefing.md")
     with open(path, "w") as f:
         f.write("\n".join(lines))

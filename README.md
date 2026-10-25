@@ -1,90 +1,97 @@
 # Political Risk and the Global Equity Mix
 
-How should a multi-asset fund account for political risk across its country exposures? This project builds a monthly political risk index for 10 major equity markets and asks three portfolio questions:
+How should a multi-asset fund account for political risk across its country exposures? This project builds a monthly political risk index for 10 equity markets (2008–2026) and tests what it means for returns, volatility, event risk and country allocation. Results are refreshed monthly by GitHub Actions; the latest briefing is in [`results/briefing.md`](results/briefing.md), and the full write-up is in [`report/Political_Risk_Report.pdf`](report/Political_Risk_Report.pdf).
 
-1. **Does a political-risk surprise move a market's returns and volatility, and for how long?** Panel local projections and a fixed-effects panel VAR.
-2. **How do markets react to discrete political events, after removing global moves?** A market-model event study of 30 events.
-3. **Is the signal useful for the asset mix?** Regime analysis, a political-risk-aware country tilt backtested out of sample, and stress tests over recent political shocks.
+## Main findings
 
-The output is a set of charts, CSV tables and an auto-generated investment briefing (`output/briefing.md`) written for a total-fund audience.
+Data: 10 markets, May 2008 to July 2026, 2,124 country-month observations, 30 political events.
 
-Version 2 rebuilds the [original project](#version-1-the-original-project) (kept in `legacy/`), which found no significant long-run effect on annual data. The new design addresses the main reasons a real effect could have been missed: annual frequency, a small panel (188 observations), index inputs that change slowly, and a mean-adjusted event model that did not remove global market moves.
+1. **Political risk is a volatility story, not a return story.** A one-standard-deviation political-risk surprise raises a country's realised volatility by about **2% in the same month** (p = 0.003), relative to other markets that month. Including moves shared across markets, the panel VAR shows volatility rising about **6% on impact**, then decaying to under 1% within four months (still statistically above normal for most of the year).
+2. **No lasting return penalty.** The same shock comes with a −0.26 pp excess return versus ACWI in the month (p = 0.05), which reverses within a quarter. Markets reprice political risk quickly rather than drifting lower.
+3. **What kind of event matters more than whether there is one.** Unscheduled **governance shocks**, such as finance-minister dismissals and leadership scandals, cost **−4.8% over three days** on average (n = 8, p = 0.02). **Scheduled elections** show no significant effect (+0.8%, n = 14, p = 0.46), because markets price and hedge them in advance.
+4. **A simple underweighting rule adds little.** Halving exposure to the three markets with the fastest-rising political risk improved return/volatility only from 0.28 to 0.30 (information ratio 0.16), before costs.
+
+**Implication:** political risk belongs in the **risk budget** (position sizing, risk limits, hedging around unscheduled instability) rather than in return forecasts.
+
+![Local projections](results/fig2_local_projections.png)
+![Event study](results/fig4_event_study.png)
 
 ## Data
 
 | Input | Source | Frequency |
 |---|---|---|
-| Economic Policy Uncertainty (EPU) by country | Baker, Bloom and Davis, [policyuncertainty.com](https://www.policyuncertainty.com) | Monthly |
+| Economic Policy Uncertainty (EPU) by country | Baker, Bloom and Davis (2016), [policyuncertainty.com](https://www.policyuncertainty.com) | Monthly |
 | Country Geopolitical Risk (GPR) | Caldara and Iacoviello (2022), [matteoiacoviello.com/gpr.htm](https://www.matteoiacoviello.com/gpr.htm) | Monthly |
 | Country equity returns, in USD | iShares country ETFs (IVV, EWG, EWJ, EWU, EWQ, EWC, EWA, INDA, EWZ, EZA) via `yfinance` | Daily |
-| Global benchmark | iShares MSCI ACWI (ACWI) | Daily |
+| Global benchmark | iShares MSCI ACWI | Daily |
 
-USD ETF returns make the markets comparable and reflect what a foreign investor actually earns, currency included. The sample starts in April 2008, when ACWI launched. South Africa has no EPU series, so its index uses GPR alone.
+Countries: United States, Germany, Japan, United Kingdom, France, Canada, Australia, India, Brazil and South Africa. USD returns put the markets on a common basis and reflect what a foreign investor earns, currency included. The sample starts in April 2008 (ACWI launch); India starts in 2012 (INDA launch). South Africa has no EPU series, so its index uses GPR alone.
 
 ## Method
 
-**Political Risk Index (PRI).** Log EPU and log GPR are standardised within each country and combined with first-principal-component weights. Two versions are kept:
+**Political Risk Index (PRI).** Log EPU and log GPR are standardised within each country and combined using first-principal-component weights. With two standardised inputs this is an equal-weighted average. Two versions are kept:
 - `pri`: full-sample standardisation, used in the econometrics.
-- `pri_rt`: expanding-window standardisation, using only data available at the time, so the backtest has no look-ahead.
+- `pri_rt`: expanding-window standardisation, which uses only data available at the time, so the backtest has no look-ahead.
 
-The **political-risk shock** is the standardised innovation from a country-level AR(1), the part of political risk that markets could not have predicted from last month.
+The **political-risk shock** is the standardised AR(1) innovation in each country's PRI: the part of this month's political risk that was not predictable from last month.
 
-**Local projections** (Jordà, 2005). For each horizon h = 0 to 12 months, the cumulative excess return over ACWI (and log realised volatility) is regressed on the shock, with two lags of each as controls. **Country and month fixed effects** mean the estimate is the effect of a country's own political-risk surprise relative to other markets in the same month. Driscoll-Kraay standard errors allow for cross-country and serial correlation.
+**Panel local projections** (Jordà, 2005). For horizons of 0–12 months, the cumulative excess return over ACWI and log realised volatility are regressed on the shock, controlling for two lags of each. Country and month fixed effects isolate each country's own political risk from global shocks. Driscoll-Kraay standard errors allow for cross-country and serial correlation.
 
-**Fixed-effects panel VAR** of [shock, excess return, log volatility]. Lags are built within each country, lag length is chosen by BIC, and impulse responses use Cholesky ordering with political risk first. Confidence bands come from 500 country-cluster bootstrap draws.
+**Fixed-effects panel VAR** of [shock, excess return, log volatility]. Lags are built within each country, lag length is chosen by BIC, and the model is identified with a Cholesky ordering (political risk first). Bands come from a 500-draw country-cluster bootstrap.
 
-**Event study.** The normal return for each event is a market model of the country ETF on ACWI over trading days [−250, −30]. Cumulative abnormal returns are reported for [−1,+1], [0,+5] and [0,+10]. Significance is tested per event and across events with the Boehmer-Musumeci-Poulsen standardised test, both overall and by event type (election, policy shock, governance, geopolitical, unrest).
+**Event study.** The normal return for each event comes from a market model on ACWI fitted over trading days [−250, −30]. Cumulative abnormal returns are reported for [−1,+1], [0,+5] and [0,+10]. Tests are run per event and across events with the Boehmer-Musumeci-Poulsen standardised test, by event type (election, policy shock, governance, geopolitical, unrest).
 
 **Portfolio applications:**
-- *Regimes:* each month, countries are ranked into terciles by real-time PRI, and next-month excess return, volatility and hit rate are compared.
-- *Tilt backtest:* starting from an equal-weight country portfolio, the three markets with the sharpest 3-month rise in real-time PRI (known at the end of the previous month) have their weight halved, and the freed weight goes to the rest. Reported: return, volatility, return/volatility, max drawdown, tracking error, information ratio and turnover.
-- *Stress tests:* cumulative USD returns for each market and the portfolio during the Brexit vote, the 2016 U.S. election, the Russian invasion of Ukraine, the UK mini-budget and the 2025 U.S.–Canada tariff shock.
+- *Regimes:* next-month outcomes by within-month PRI tercile.
+- *Tilt backtest:* equal-weight country portfolio vs. halving the three fastest-rising PRI markets, using signals known at the start of each month.
+- *Stress tests:* returns during Brexit, the 2016 U.S. election, the Russian invasion of Ukraine, the UK mini-budget and the 2025 U.S.–Canada tariff shock.
 
-## Outputs
+## Outputs (`results/`)
 
 | File | Content |
 |---|---|
-| `fig1_political_risk_index.png` | PRI over time, by country |
-| `fig2_local_projections.png` | Return and volatility responses to a 1 s.d. shock, 90% bands |
-| `fig3_panel_var_irf.png` | Panel VAR impulse responses with bootstrap bands |
-| `fig4_event_study.png` | CAR by event, and the average abnormal-return path |
-| `fig5_regimes.png` | Next-month outcomes by political-risk tercile |
-| `fig6_backtest.png` | Tilt vs equal weight: growth of 100 and drawdowns |
-| `fig7_stress_tests.png` | Returns by market during political-stress windows |
-| `briefing.md` | Key findings, total-fund implications, current country read, limitations |
+| `briefing.md` | Investment briefing: findings, total-fund implications, current country read, stress tests |
+| `fig1_political_risk_index.png` | PRI over time |
+| `fig2_local_projections.png` | Return and volatility responses to a political-risk shock |
+| `fig3_panel_var_irf.png` | Panel VAR impulse responses |
+| `fig4_event_study.png` | Abnormal returns by event and on average |
+| `fig5_regimes.png` | Outcomes by political-risk tercile |
+| `fig6_backtest.png` | Tilt vs. equal weight: growth and drawdowns |
+| `fig7_stress_tests.png` | Market returns in political-stress windows |
 | `*.csv` | All underlying tables |
 
 ## How to run
 
 ```bash
 pip install -r requirements.txt
-python run_analysis.py              # real data: downloads once, then cached in data/
+python run_analysis.py              # downloads data (cached in data/), writes results/
+python run_analysis.py --refresh    # re-download prices
 python run_analysis.py --synthetic  # offline demo on simulated data
 pytest                              # tests
 ```
 
-If a download fails, save the EPU file as `data/raw/All_Country_Data.xlsx` and the GPR file as `data/raw/data_gpr_export.xls`. The loader uses the local copies first.
+The **Analysis** workflow runs the tests on every push and pull request. Each month, and on demand, it reruns the analysis on the latest data and commits the updated `results/`.
 
 ## Tests
 
-The test suite runs on simulated data in which a known effect is built in: a 1 s.d. shock lowers next-month excess return by 2%, and events carry a −2% abnormal return. The tests check that:
-- local projections recover the planted effect, and the event study detects the planted event returns but finds nothing when there is no effect;
-- the real-time index and the tilt weights do not use future data;
-- portfolio weights always sum to 1.
+The tests run on simulated data with a known effect built in: a political-risk shock lowers next-month returns by 2%, and events carry a −2% abnormal return. They check that:
+- the models recover the built-in effects, and the event study finds nothing when no effect is present;
+- the real-time index and portfolio weights never use future data;
+- portfolio weights always sum to one.
 
 ## Limitations
 
-- Ten markets and about 17 years limit statistical power, so estimates should be read as indicative.
-- Panel VAR results depend on the ordering assumption (political risk first). The local projections do not rely on it.
+- Ten markets and 18 years limit statistical power, and some event types have only 2–3 events.
+- The panel VAR depends on its ordering assumption; the local projections do not.
 - EPU and GPR are text-based measures and pick up media attention as well as underlying risk.
-- Event dates in `political_risk/config.py` were compiled by hand and should be checked before the results are relied on.
-- The backtest ignores transaction costs. Average turnover is reported so their effect can be judged.
+- Excess returns are in USD and include currency effects.
+- The backtest excludes transaction costs; turnover is reported so their effect can be judged.
 
 ## Project structure
 
 ```
 political_risk/
-  config.py        countries, tickers, data URLs, events, stress windows
+  config.py        countries, tickers, data sources, events, stress windows
   data.py          downloads with caching, plus a synthetic data generator
   index.py         Political Risk Index and shocks
   econometrics.py  monthly panel, local projections, panel VAR
@@ -92,12 +99,17 @@ political_risk/
   allocation.py    regimes, tilt backtest, stress tests
   report.py        charts and briefing
 run_analysis.py    end-to-end pipeline
+results/           latest charts, tables and briefing
+report/            written report (LaTeX source and PDF)
 tests/             tests on synthetic data
 legacy/            version 1 code and report
 ```
 
-## Version 1: the original project
+## Version 1
 
-The first version (`legacy/code_v1.py`, `legacy/Project_Report_v1.pdf`) built an annual Composite Political Risk Index from the World Bank Governance Indicators, the Database of Political Institutions and the Global Sanctions Data Base for 2005–2020. It estimated a VAR with FDI and market volatility and ran 10 mean-adjusted event studies. The composite index was not a significant predictor of volatility or FDI. Event reactions of 3–5% (UK mini-budget −3.5%, the German 2021 election −4.4%, the 2014 Modi election +2.8%) were economically meaningful but not significant at 5%.
+The first version (`legacy/`) used an annual composite index from the World Bank Governance Indicators, the Database of Political Institutions and the Global Sanctions Data Base (2005–2020). It found no significant long-run effect on volatility or FDI, and event reactions of 3–5% that were not significant at 5%. Version 2 addresses the likely reasons:
+- monthly data instead of annual, with about 11 times as many observations;
+- inputs that capture political-risk news rather than slow-moving governance scores;
+- an event model that removes global market moves.
 
-**Tools:** Python, pandas, NumPy, SciPy, scikit-learn, linearmodels, Matplotlib, yfinance, pytest
+**Tools:** Python, pandas, NumPy, SciPy, scikit-learn, linearmodels, Matplotlib, yfinance, pytest, GitHub Actions

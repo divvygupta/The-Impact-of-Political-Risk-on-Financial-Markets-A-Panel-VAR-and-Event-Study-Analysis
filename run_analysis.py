@@ -1,6 +1,6 @@
-"""Run the full political-risk analysis and write charts, tables and a briefing to ./output.
+"""Run the full political-risk analysis and write charts, tables and a briefing to ./results.
 
-    python run_analysis.py              # real data (needs internet the first time; cached after)
+    python run_analysis.py              # real data, written to ./results (cached downloads in ./data)
     python run_analysis.py --synthetic  # offline demo on simulated data with a known effect
 """
 
@@ -16,7 +16,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--synthetic", action="store_true", help="use simulated data (no internet needed)")
     ap.add_argument("--refresh", action="store_true", help="re-download market data")
-    ap.add_argument("--out", default="output")
+    ap.add_argument("--out", default="results")
     ap.add_argument("--boot", type=int, default=500, help="panel VAR bootstrap draws")
     a = ap.parse_args(argv)
     os.makedirs(a.out, exist_ok=True)
@@ -53,7 +53,7 @@ def main(argv=None):
 
     dates = panel.index.get_level_values("date")
     latest = pri["pri_rt"].unstack("country").ffill().iloc[-1]
-    res = {"lp": lp, "regimes": regimes, "metrics": metrics, "event_summary": ev_summary, "per_event": per_event,
+    res = {"lp": lp, "var": var, "regimes": regimes, "metrics": metrics, "event_summary": ev_summary, "per_event": per_event,
            "stress": stress, "weights": weights, "pca": pca, "pri_latest": latest,
            "n_countries": panel.index.get_level_values("country").nunique(),
            "start": dates.min().strftime("%b %Y"), "end": dates.max().strftime("%b %Y")}

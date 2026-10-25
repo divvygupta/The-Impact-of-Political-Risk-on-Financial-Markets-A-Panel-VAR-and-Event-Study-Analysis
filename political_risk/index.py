@@ -33,6 +33,10 @@ def build_pri(epu: pd.DataFrame, gpr: pd.DataFrame) -> tuple[pd.DataFrame, pd.Se
     Returns (panel DataFrame indexed by [country, date], PCA weights).
     """
     df = pd.merge(epu, gpr, on=["date", "country"], how="outer").sort_values(["country", "date"])
+    # Keep the index's composition stable: where a country has EPU, stop at its last EPU month
+    # rather than letting the final months silently fall back to GPR alone.
+    last_epu = epu.groupby("country")["date"].max()
+    df = df[df["date"] <= df["country"].map(last_epu).fillna(epu["date"].max())]
     df["log_epu"] = np.log(df["epu"])
     df["log_gpr"] = np.log(df["gpr"])
     comps = ["log_epu", "log_gpr"]

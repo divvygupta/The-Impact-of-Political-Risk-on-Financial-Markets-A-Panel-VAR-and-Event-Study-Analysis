@@ -63,7 +63,7 @@ def load_epu() -> pd.DataFrame:
 
 def load_gpr() -> pd.DataFrame:
     """Monthly country-specific Geopolitical Risk index (long format: date, country, gpr)."""
-    df = _read_source(config.GPR_URL, "data_gpr_export.xls")
+    df = _read_source(config.GPR_URL, "data_gpr_export.xls").copy()
     df["date"] = pd.to_datetime(df["month"]).dt.to_period("M").dt.to_timestamp()
     rows = []
     for code, spec in config.COUNTRIES.items():
