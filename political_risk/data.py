@@ -35,12 +35,16 @@ def load_prices(start: str = config.START, end: str | None = config.END, refresh
 
 # --- Political-risk data ------------------------------------------------------------
 def _read_source(url: str, local_name: str, **kwargs) -> pd.DataFrame:
+    """Read a source spreadsheet: a manually saved copy in data/raw first, then a CSV cache, then the URL."""
     local = os.path.join(config.RAW_DIR, local_name)
     if os.path.exists(local):
         return pd.read_excel(local, **kwargs)
+    cached = os.path.join(config.RAW_DIR, os.path.splitext(local_name)[0] + ".csv")
+    if os.path.exists(cached):
+        return pd.read_csv(cached)
     df = pd.read_excel(url, **kwargs)
     os.makedirs(config.RAW_DIR, exist_ok=True)
-    df.to_excel(local, index=False)
+    df.to_csv(cached, index=False)  # pandas cannot write legacy .xls, so cache as CSV
     return df
 
 
