@@ -5,6 +5,9 @@ on:
     branches: [main, v2-portfolio-strategy]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   analysis:
     runs-on: ubuntu-latest
@@ -17,11 +20,19 @@ jobs:
       - name: Tests
         run: pytest -q
       - name: Analysis on real data
-        run: python run_analysis.py --out output
-      - uses: actions/upload-artifact@v4
+        run: |
+          set -o pipefail
+          mkdir -p output
+          python run_analysis.py --out output 2>&1 | tee output/run.log
+      - name: Publish results to the results branch
         if: always()
-        with:
-          name: results
-          path: |
-            output/
-            data/
+        run: |
+          mkdir -p /tmp/res && cp -r output data /tmp/res/ 2>/dev/null || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan results
+          git rm -rq --cached . && git clean -fdxq -e .git
+          cp -r /tmp/res/* . 2>/dev/null || true
+          git add -f output data 2>/dev/null || true
+          git commit -qm "Results from run ${GITHUB_RUN_ID} (${GITHUB_SHA::7})" || exit 0
+          git push -f origin results
